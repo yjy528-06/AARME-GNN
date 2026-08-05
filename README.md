@@ -7,6 +7,12 @@ This repository contains the source code and datasets for the AARME-GNN model, a
 
 ---
 
+## Framework
+
+![AARME-GNN Framework](AARME_GNN_framework.png)
+
+---
+
 ## Data Files
 
 The `dataset/` folder contains four knowledge graphs in triplet format (<head, relation, tail>) and an SQLite database with drug and interaction event information. Below is a description of each file:
