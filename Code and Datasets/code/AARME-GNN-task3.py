@@ -477,9 +477,9 @@ def main():
     y_pred = np.array([])
 
     for cross_ver in range(5):
-        net = nn.Sequential(GNN1(dataset, tail_len, relation_len, args, dict1, drug_name, mode=args.adapter_mode),
-                            GNN2(dataset, tail_len, relation_len, args, dict1, drug_name, mode=args.adapter_mode),
-                            GNN3(dataset, tail_len, relation_len, args, dict1, drug_name, mode=args.adapter_mode),
+        net = nn.Sequential(GNN1(dataset, tail_len, relation_len, args, dict1, drug_name),
+                            GNN2(dataset, tail_len, relation_len, args, dict1, drug_name),
+                            GNN3(dataset, tail_len, relation_len, args, dict1, drug_name),
                             FusionLayer(args))
 
         X_train = []

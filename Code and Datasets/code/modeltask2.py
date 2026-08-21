@@ -59,7 +59,7 @@ class RouterNetwork(nn.Module):
 
 
 class GNN1(nn.Module):
-    def __init__(self, dataset, tail_len, relation_len, args, dict1, drug_name, mode="channel_only", **kwargs):
+    def __init__(self, dataset, tail_len, relation_len, args, dict1, drug_name, **kwargs):
         super(GNN1, self).__init__(**kwargs)
         self.kg, self.dict1 = dataset["dataset1"], dict1
         self.drug_name, self.args = drug_name, args
@@ -78,9 +78,7 @@ class GNN1(nn.Module):
 
         self.adapter = Att_Adapter(
             input_dim=args.embedding_num,
-            latent_dim=64,
-            n_prompts=10,
-            mode=mode
+            latent_dim=64
         )
 
         self.relu = nn.ReLU()
@@ -144,7 +142,7 @@ class GNN1(nn.Module):
 
 
 class GNN2(nn.Module):
-    def __init__(self, dataset, tail_len, relation_len, args, dict1, drug_name, mode="channel_only", **kwargs):
+    def __init__(self, dataset, tail_len, relation_len, args, dict1, drug_name, **kwargs):
         super(GNN2, self).__init__(**kwargs)
         self.kg, self.dict1 = dataset["dataset2"], dict1
         self.drug_name, self.args = drug_name, args
@@ -163,9 +161,7 @@ class GNN2(nn.Module):
 
         self.adapter = Att_Adapter(
             input_dim=args.embedding_num,
-            latent_dim=64,
-            n_prompts=10,
-            mode=mode
+            latent_dim=64
         )
 
         self.relu = nn.ReLU()
@@ -230,7 +226,7 @@ class GNN2(nn.Module):
 
 
 class GNN3(nn.Module):
-    def __init__(self, dataset, tail_len, relation_len, args, dict1, drug_name, mode="channel_only", **kwargs):
+    def __init__(self, dataset, tail_len, relation_len, args, dict1, drug_name, **kwargs):
         super(GNN3, self).__init__(**kwargs)
         self.kg, self.dict1 = dataset["dataset3"], dict1
         self.drug_name, self.args = drug_name, args
@@ -249,9 +245,7 @@ class GNN3(nn.Module):
 
         self.adapter = Att_Adapter(
             input_dim=args.embedding_num,
-            latent_dim=64,
-            n_prompts=10,
-            mode=mode
+            latent_dim=64
         )
 
         self.relu = nn.ReLU()
