@@ -1,3 +1,6 @@
+import os as _os_det
+_os_det.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+
 import argparse
 import csv
 import os
@@ -25,6 +28,28 @@ from modeltask2 import FusionLayer, GNN1, GNN2, GNN3
 
 warnings.filterwarnings("ignore")
 
+
+DATASET_PRESET = {
+    1: {"n_drug": 572,  "event_num": 65,  "data_dir": "../dataset1"},
+    2: {"n_drug": 1258, "event_num": 100, "data_dir": "../dataset2"},
+}
+DATA_DIR = DATASET_PRESET[1]["data_dir"]
+
+
+def configure_dataset(args):
+
+    p = DATASET_PRESET[int(args.dataset)]
+    args.n_drug = int(p["n_drug"])
+    args.event_num = int(p["event_num"])
+    if not hasattr(args, "_data_dir_raw"):
+        args._data_dir_raw = getattr(args, "data_dir", None)   # 用户显式指定的值（可为 None）
+    args.data_dir = args._data_dir_raw or p["data_dir"]
+    args.data_dir = os.path.abspath(args.data_dir)
+    return args
+
+
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 parser = argparse.ArgumentParser(description='GNN based on the whole datas')
 parser.add_argument("--epoches", type=int, choices=[100, 500, 1000, 2000], default=100)
 parser.add_argument("--batch_size", type=int, choices=[2048, 1024, 512, 256, 128], default=1024)
@@ -33,6 +58,10 @@ parser.add_argument("--lr", type=float, choices=[1e-3, 1e-4, 1e-5, 4 * 1e-3], de
 
 parser.add_argument("--neighbor_sample_size", choices=[4, 6, 10, 16], type=int, default=6)
 parser.add_argument("--event_num", type=int, default=65)
+parser.add_argument("--dataset", type=int, choices=[1, 2], default=1,
+                    help="1=Dataset1(572药物/65事件), 2=Dataset2(1258药物/100事件)")
+parser.add_argument("--data_dir", type=str, default=None,
+                    help="数据目录；不填则按 --dataset 自动选择 ../dataset1 或 ../dataset2")
 
 parser.add_argument("--n_drug", type=int, default=572)
 parser.add_argument("--seed", type=int, default=1)
@@ -40,6 +69,7 @@ parser.add_argument("--dropout", type=float, default=0.3)
 parser.add_argument("--embedding_num", type=int, choices=[128, 64, 256, 32], default=256)
 
 args = parser.parse_args()
+args = configure_dataset(args)
 
 
 def setup_seed():
@@ -49,10 +79,14 @@ def setup_seed():
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
-    torch.use_deterministic_algorithms(True)
+    if os.environ.get("DDI_DETERMINISTIC", "1") != "0":
+        try:
+            torch.use_deterministic_algorithms(True)
+        except Exception:
+            pass
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-    torch.backends.cudnn.enabled = False
+    torch.backends.cudnn.enabled = True
 
 
 def read_dataset(drug_name_id, num):
@@ -60,7 +94,7 @@ def read_dataset(drug_name_id, num):
     tails = {}
     relations = {}
     drug_list = []
-    filename = "../dataset/dataset" + str(num) + ".txt"
+    filename = os.path.join(DATA_DIR, "dataset" + str(num) + ".txt")
     with open(filename, encoding="utf8") as reader:
         for line in reader:
             string = line.rstrip().split('//', 2)
@@ -222,7 +256,7 @@ def train(train_x, train_y, test_x, test_y, net, test_adj):
     train_data = TensorDataset(train_x_total, train_y)
     train_iter = DataLoader(train_data, args.batch_size, shuffle=True)
     test_list = []
-    max_test_output = torch.zeros((0, 65), dtype=torch.float)
+    max_test_output = torch.zeros((0, args.event_num), dtype=torch.float)
     max_modality_weights = None
 
     lambda_balance = 0.2
@@ -236,8 +270,8 @@ def train(train_x, train_y, test_x, test_y, net, test_adj):
         for x, y in train_iter:
             opti.zero_grad()
             train_acc = 0
-            train_label = torch.LongTensor(y)
-            x = torch.LongTensor(x)
+            train_label = torch.LongTensor(y).to(DEVICE)
+            x = torch.LongTensor(x).to(DEVICE)
             f_input = list()
             f_input.append(x)
             f_input.append(0)
@@ -281,12 +315,12 @@ def train(train_x, train_y, test_x, test_y, net, test_adj):
             opti.step()
 
             train_l += l_total.item()
-            train_acc = accuracy_score(torch.argmax(main_output, dim=1), train_label)
+            train_acc = accuracy_score(torch.argmax(main_output, dim=1).detach().cpu().numpy(), train_label.cpu().numpy())
             train_a.append(train_acc)
 
         net.eval()
         with torch.no_grad():
-            test_x_tensor = torch.LongTensor(test_x)
+            test_x_tensor = torch.LongTensor(test_x).to(DEVICE)
             f_input = list()
             f_input.append(test_x_tensor)
             f_input.append(1)
@@ -294,12 +328,12 @@ def train(train_x, train_y, test_x, test_y, net, test_adj):
 
             main_output_test, _, modality_weights_test = net(f_input)
             test_output = F.softmax(main_output_test, dim=1)
-            test_label = torch.LongTensor(test_y)
+            test_label = torch.LongTensor(test_y).to(DEVICE)
 
             loss = loss_function(test_output, test_label)
             test_loss = loss.item()
-            test_score = f1_score(torch.argmax(test_output, dim=1), test_label, average='macro')
-            test_acc = accuracy_score(torch.argmax(test_output, dim=1), test_label)
+            test_score = f1_score(torch.argmax(test_output, dim=1).cpu().numpy(), test_label.cpu().numpy(), average='macro')
+            test_acc = accuracy_score(torch.argmax(test_output, dim=1).cpu().numpy(), test_label.cpu().numpy())
 
             test_list.append(test_score)
             if test_score == max(test_list):
@@ -317,11 +351,11 @@ def train(train_x, train_y, test_x, test_y, net, test_adj):
         train_a), test_list, max_test_output
 
 
-def find_dif(raw_matrix):
-    sim_matrix4 = np.zeros((572, 572), dtype=float)
-    for i in range(572):
-        for j in range(572):
-            for k in range(20):
+def find_dif(raw_matrix, n_drug):
+    sim_matrix4 = np.zeros((args.n_drug, args.n_drug), dtype=float)
+    for i in range(n_drug):
+        for j in range(n_drug):
+            for k in range(raw_matrix.shape[1]):
                 if i == j:
                     sim_matrix4[i, j] = 0
                     break
@@ -341,7 +375,9 @@ def Jaccard(matrix):
 
 
 def main():
-    conn = sqlite3.connect("../dataset/event.db")
+    global DATA_DIR
+    DATA_DIR = args.data_dir
+    conn = sqlite3.connect(os.path.join(DATA_DIR, "event.db"))
     df_drug = pd.read_sql('select * from drug;', conn)
     extraction = pd.read_sql('select * from extraction;', conn)
     mechanism = extraction['mechanism']
@@ -377,10 +413,10 @@ def main():
             for j in dataset[kg][i]:
                 temp_kg[p][i].append(j[0])
 
-    feature_matrix1 = np.zeros((572, dataset1_tail_len), dtype=float)
-    feature_matrix2 = np.zeros((572, dataset2_tail_len), dtype=float)
-    feature_matrix3 = np.zeros((572, dataset4_tail_len), dtype=float)
-    feature_matrix4 = np.zeros((572, 572), dtype=float)
+    feature_matrix1 = np.zeros((args.n_drug, dataset1_tail_len), dtype=float)
+    feature_matrix2 = np.zeros((args.n_drug, dataset2_tail_len), dtype=float)
+    feature_matrix3 = np.zeros((args.n_drug, dataset4_tail_len), dtype=float)
+    feature_matrix4 = np.zeros((args.n_drug, args.n_drug), dtype=float)
 
     for i in dataset4_kg.keys():
         for p, v in dataset4_kg[i]:
@@ -401,7 +437,7 @@ def main():
     drug_sim1 = Jaccard(feature_matrix1)
     drug_sim2 = Jaccard(feature_matrix2)
     drug_sim4 = Jaccard(feature_matrix4)
-    drug_sim3 = find_dif(feature_matrix3)
+    drug_sim3 = find_dif(feature_matrix3, args.n_drug)
 
     temp_drugA = [[] for i in range(event_num)]
     temp_drugB = [[] for i in range(event_num)]
@@ -478,7 +514,7 @@ def main():
                     test_adj[i][k][j].append(current_p)
 
     y_true = np.array([])
-    y_score = np.zeros((0, 65), dtype=float)
+    y_score = np.zeros((0, args.event_num), dtype=float)
     y_pred = np.array([])
 
     for cross_ver in range(5):
@@ -487,7 +523,7 @@ def main():
             GNN2(dataset, tail_len, relation_len, args, dict1, drug_name),
             GNN3(dataset, tail_len, relation_len, args, dict1, drug_name),
             FusionLayer(args)
-        )
+        ).to(DEVICE)
 
         X_train = []
         X_test = []
@@ -513,9 +549,9 @@ def main():
                                                                                    net, test_adj[cross_ver])
         train_sum += train_acc
         test_sum += test_acc
-        pred_type = torch.argmax(test_output, dim=1).numpy()
+        pred_type = torch.argmax(test_output, dim=1).cpu().numpy()
         y_pred = np.hstack((y_pred, pred_type))
-        y_score = np.row_stack((y_score, test_output.numpy()))
+        y_score = np.row_stack((y_score, test_output.detach().cpu().numpy()))
         y_true = np.hstack((y_true, test_y))
         print('fold %d, test_loss %f, test_acc %f, train_loss %f, train_acc %f' % (
             cross_ver, test_loss, test_acc, train_loss, train_acc))
@@ -523,6 +559,9 @@ def main():
     result_all, result_eve = evaluate(y_pred, y_score, y_true, args.event_num)
     save_result("../result/", "all", result_all)
     save_result("../result/", "each", result_eve)
+    # 【返修新增】落盘逐样本概率矩阵：日后重算指标/显著性检验无需重训
+    for _n, _a in (("y_true", y_true), ("y_pred", y_pred), ("y_score", y_score)):
+        np.save(os.path.join("../result", "%s_AARME_task2.npy" % _n), np.asarray(_a))
     print('%d-fold validation: avg train acc  %f, avg test acc %f' % (5, train_sum / 5, test_sum / 5))
     return
 

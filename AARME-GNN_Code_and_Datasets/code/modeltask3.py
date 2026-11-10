@@ -1,4 +1,6 @@
 import torch
+
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 import torch.nn as nn
 import torch.nn.functional as F
 from collections import defaultdict
@@ -63,13 +65,13 @@ class GNN1(nn.Module):
         self.kg, self.dict1 = dataset["dataset1"], dict1
         self.drug_name, self.args = drug_name, args
 
-        self.drug_embed = nn.Embedding(num_embeddings=572, embedding_dim=args.embedding_num)
+        self.drug_embed = nn.Embedding(num_embeddings=args.n_drug, embedding_dim=args.embedding_num)
         self.rela_embed = nn.Embedding(num_embeddings=relation_len["dataset1"], embedding_dim=args.embedding_num)
         self.ent_embed = nn.Embedding(num_embeddings=tail_len["dataset1"], embedding_dim=args.embedding_num)
 
-        self.W1 = nn.Parameter(torch.randn(size=(572, args.embedding_num, args.embedding_num)))
+        self.W1 = nn.Parameter(torch.randn(size=(args.n_drug, args.embedding_num, args.embedding_num)))
         self.b1 = nn.Parameter(torch.randn(size=(args.neighbor_sample_size, args.embedding_num)))
-        self.W2 = nn.Parameter(torch.randn(size=(572, args.embedding_num, args.embedding_num)))
+        self.W2 = nn.Parameter(torch.randn(size=(args.n_drug, args.embedding_num, args.embedding_num)))
         self.b2 = nn.Parameter(torch.randn(size=(args.neighbor_sample_size, args.embedding_num)))
 
         self.Linear1 = nn.Sequential(nn.Linear(args.embedding_num * 2, args.embedding_num),
@@ -97,15 +99,15 @@ class GNN1(nn.Module):
         kg, dict1, args, drug_name = self.kg, self.dict1, self.args, self.drug_name
         adj_tail, adj_relation = self.arrge(kg, dict1, args.neighbor_sample_size)
 
-        drug_name = torch.LongTensor(drug_name)
-        adj_tail = torch.LongTensor(adj_tail)
-        adj_relation = torch.LongTensor(adj_relation)
+        drug_name = torch.LongTensor(drug_name).to(DEVICE)
+        adj_tail = torch.LongTensor(adj_tail).to(DEVICE)
+        adj_relation = torch.LongTensor(adj_relation).to(DEVICE)
 
         drug_embedding = self.drug_embed(drug_name)
         rela_embedding = self.rela_embed(adj_relation)
         ent_embedding = self.ent_embed(adj_tail)
 
-        drug_rel = drug_embedding.reshape((572, 1, args.embedding_num)) * rela_embedding
+        drug_rel = drug_embedding.reshape((args.n_drug, 1, args.embedding_num)) * rela_embedding
         drug_rel_weigh = drug_rel.matmul(self.W1) + self.b1
         drug_rel_weigh = self.relu(drug_rel_weigh)
         drug_rel_weigh = drug_rel_weigh.matmul(self.W2) + self.b2
@@ -113,9 +115,9 @@ class GNN1(nn.Module):
         drug_rel_score = torch.sum(drug_rel_weigh, axis=-1, keepdims=True)
         drug_rel_score = self.soft(drug_rel_score)
 
-        weighted_ent = drug_rel_score.reshape((572, 1, args.neighbor_sample_size)).matmul(ent_embedding)
+        weighted_ent = drug_rel_score.reshape((args.n_drug, 1, args.neighbor_sample_size)).matmul(ent_embedding)
         drug_e = torch.cat(
-            [weighted_ent.reshape(572, args.embedding_num), drug_embedding.reshape((572, args.embedding_num))], dim=1)
+            [weighted_ent.reshape(args.n_drug, args.embedding_num), drug_embedding.reshape((args.n_drug, args.embedding_num))], dim=1)
         drug_f = self.Linear1(drug_e)
 
         aux_output = self.aux_head(drug_f)
@@ -131,7 +133,9 @@ class GNN1(nn.Module):
 
         return calibrated_drug_f, aux_output, idx, test_adj, train_or_test
 
-    def arrge(self, kg, drug_name_id, neighbor_sample_size, n_drug=572):
+    def arrge(self, kg, drug_name_id, neighbor_sample_size, n_drug=None):
+        if n_drug is None:
+            n_drug = self.args.n_drug
         adj_tail = np.zeros(shape=(n_drug, neighbor_sample_size), dtype=np.int64)
         adj_relation = np.zeros(shape=(n_drug, neighbor_sample_size), dtype=np.int64)
         for i in drug_name_id:
@@ -153,13 +157,13 @@ class GNN2(nn.Module):
         self.kg, self.dict1 = dataset["dataset2"], dict1
         self.drug_name, self.args = drug_name, args
 
-        self.drug_embed = nn.Embedding(num_embeddings=572, embedding_dim=args.embedding_num)
+        self.drug_embed = nn.Embedding(num_embeddings=args.n_drug, embedding_dim=args.embedding_num)
         self.rela_embed = nn.Embedding(num_embeddings=relation_len["dataset2"], embedding_dim=args.embedding_num)
         self.ent_embed = nn.Embedding(num_embeddings=tail_len["dataset2"], embedding_dim=args.embedding_num)
 
-        self.W1 = nn.Parameter(torch.randn(size=(572, args.embedding_num, args.embedding_num)))
+        self.W1 = nn.Parameter(torch.randn(size=(args.n_drug, args.embedding_num, args.embedding_num)))
         self.b1 = nn.Parameter(torch.randn(size=(args.neighbor_sample_size, args.embedding_num)))
-        self.W2 = nn.Parameter(torch.randn(size=(572, args.embedding_num, args.embedding_num)))
+        self.W2 = nn.Parameter(torch.randn(size=(args.n_drug, args.embedding_num, args.embedding_num)))
         self.b2 = nn.Parameter(torch.randn(size=(args.neighbor_sample_size, args.embedding_num)))
 
         self.Linear1 = nn.Sequential(nn.Linear(args.embedding_num * 2, args.embedding_num),
@@ -189,15 +193,15 @@ class GNN2(nn.Module):
 
         adj_tail, adj_relation = self.arrge(kg, dict1, args.neighbor_sample_size)
 
-        drug_name = torch.LongTensor(drug_name)
-        adj_tail = torch.LongTensor(adj_tail)
-        adj_relation = torch.LongTensor(adj_relation)
+        drug_name = torch.LongTensor(drug_name).to(DEVICE)
+        adj_tail = torch.LongTensor(adj_tail).to(DEVICE)
+        adj_relation = torch.LongTensor(adj_relation).to(DEVICE)
 
         drug_embedding = self.drug_embed(drug_name)
         rela_embedding = self.rela_embed(adj_relation)
         ent_embedding = self.ent_embed(adj_tail)
 
-        drug_rel = drug_embedding.reshape((572, 1, args.embedding_num)) * rela_embedding
+        drug_rel = drug_embedding.reshape((args.n_drug, 1, args.embedding_num)) * rela_embedding
         drug_rel_weigh = drug_rel.matmul(self.W1) + self.b1
         drug_rel_weigh = self.relu(drug_rel_weigh)
         drug_rel_weigh = drug_rel_weigh.matmul(self.W2) + self.b2
@@ -205,9 +209,9 @@ class GNN2(nn.Module):
         drug_rel_score = torch.sum(drug_rel_weigh, axis=-1, keepdims=True)
         drug_rel_score = self.soft(drug_rel_score)
 
-        weighted_ent = drug_rel_score.reshape((572, 1, args.neighbor_sample_size)).matmul(ent_embedding)
+        weighted_ent = drug_rel_score.reshape((args.n_drug, 1, args.neighbor_sample_size)).matmul(ent_embedding)
         drug_e = torch.cat(
-            [weighted_ent.reshape(572, args.embedding_num), drug_embedding.reshape((572, args.embedding_num))], dim=1)
+            [weighted_ent.reshape(args.n_drug, args.embedding_num), drug_embedding.reshape((args.n_drug, args.embedding_num))], dim=1)
         drug_f = self.Linear1(drug_e)
 
         aux_output = self.aux_head(drug_f)
@@ -222,7 +226,9 @@ class GNN2(nn.Module):
 
         return calibrated_drug_f, aux_output, gnn1_embedding, gnn1_aux, idx, test_adj, train_or_test
 
-    def arrge(self, kg, drug_name_id, neighbor_sample_size, n_drug=572):
+    def arrge(self, kg, drug_name_id, neighbor_sample_size, n_drug=None):
+        if n_drug is None:
+            n_drug = self.args.n_drug
         adj_tail = np.zeros(shape=(n_drug, neighbor_sample_size), dtype=np.int64)
         adj_relation = np.zeros(shape=(n_drug, neighbor_sample_size), dtype=np.int64)
         for i in drug_name_id:
@@ -244,13 +250,13 @@ class GNN3(nn.Module):
         self.kg, self.dict1 = dataset["dataset3"], dict1
         self.drug_name, self.args = drug_name, args
 
-        self.drug_embed = nn.Embedding(num_embeddings=572, embedding_dim=args.embedding_num)
-        self.rela_embed = nn.Embedding(num_embeddings=67, embedding_dim=args.embedding_num)
-        self.ent_embed = nn.Embedding(num_embeddings=572, embedding_dim=args.embedding_num)
+        self.drug_embed = nn.Embedding(num_embeddings=args.n_drug, embedding_dim=args.embedding_num)
+        self.rela_embed = nn.Embedding(num_embeddings=args.event_num + 2, embedding_dim=args.embedding_num)
+        self.ent_embed = nn.Embedding(num_embeddings=args.n_drug, embedding_dim=args.embedding_num)
 
-        self.W1 = nn.Parameter(torch.randn(size=(572, args.embedding_num, args.embedding_num)))
+        self.W1 = nn.Parameter(torch.randn(size=(args.n_drug, args.embedding_num, args.embedding_num)))
         self.b1 = nn.Parameter(torch.randn(size=(args.neighbor_sample_size, args.embedding_num)))
-        self.W2 = nn.Parameter(torch.randn(size=(572, args.embedding_num, args.embedding_num)))
+        self.W2 = nn.Parameter(torch.randn(size=(args.n_drug, args.embedding_num, args.embedding_num)))
         self.b2 = nn.Parameter(torch.randn(size=(args.neighbor_sample_size, args.embedding_num)))
 
         self.Linear1 = nn.Sequential(nn.Linear(args.embedding_num * 2, args.embedding_num),
@@ -280,15 +286,15 @@ class GNN3(nn.Module):
 
         adj_tail, adj_relation = self.arrge(kg, dict1, args.neighbor_sample_size)
 
-        drug_name = torch.LongTensor(drug_name)
-        adj_tail = torch.LongTensor(adj_tail)
-        adj_relation = torch.LongTensor(adj_relation)
+        drug_name = torch.LongTensor(drug_name).to(DEVICE)
+        adj_tail = torch.LongTensor(adj_tail).to(DEVICE)
+        adj_relation = torch.LongTensor(adj_relation).to(DEVICE)
 
         drug_embedding = self.drug_embed(drug_name)
         rela_embedding = self.rela_embed(adj_relation)
         ent_embedding = self.ent_embed(adj_tail)
 
-        drug_rel = drug_embedding.reshape((572, 1, args.embedding_num)) * rela_embedding
+        drug_rel = drug_embedding.reshape((args.n_drug, 1, args.embedding_num)) * rela_embedding
         drug_rel_weigh = drug_rel.matmul(self.W1) + self.b1
         drug_rel_weigh = self.relu(drug_rel_weigh)
         drug_rel_weigh = drug_rel_weigh.matmul(self.W2) + self.b2
@@ -296,9 +302,9 @@ class GNN3(nn.Module):
         drug_rel_score = torch.sum(drug_rel_weigh, axis=-1, keepdims=True)
         drug_rel_score = self.soft(drug_rel_score)
 
-        weighted_ent = drug_rel_score.reshape((572, 1, args.neighbor_sample_size)).matmul(ent_embedding)
+        weighted_ent = drug_rel_score.reshape((args.n_drug, 1, args.neighbor_sample_size)).matmul(ent_embedding)
         drug_e = torch.cat(
-            [weighted_ent.reshape(572, args.embedding_num), drug_embedding.reshape((572, args.embedding_num))], dim=1)
+            [weighted_ent.reshape(args.n_drug, args.embedding_num), drug_embedding.reshape((args.n_drug, args.embedding_num))], dim=1)
         drug_f = self.Linear1(drug_e)
 
         aux_output = self.aux_head(drug_f)
@@ -313,7 +319,14 @@ class GNN3(nn.Module):
 
         return calibrated_drug_f, aux_output, gnn2_embedding, gnn2_aux, gnn1_embedding, gnn1_aux, idx
 
-    def arrge(self, kg, drug_name_id, neighbor_sample_size, n_drug=572, tails_num=570, relations_num=65):
+    def arrge(self, kg, drug_name_id, neighbor_sample_size, n_drug=None, tails_num=None, relations_num=None):
+
+        if n_drug is None:
+            n_drug = self.args.n_drug
+        if tails_num is None:
+            tails_num = self.args.n_drug - 2
+        if relations_num is None:
+            relations_num = self.args.event_num
         drug_number = []
         drug_list = []
         for i in drug_name_id:
@@ -369,7 +382,7 @@ class FusionLayer(nn.Module):
     def forward(self, arguments):
         gnn3_embedding, gnn3_aux, gnn2_embedding, gnn2_aux, gnn1_embedding, gnn1_aux, idx = arguments
 
-        idx = idx.numpy().tolist()
+        idx = idx.cpu().numpy().tolist()
         drugA = []
         drugB = []
         for i in idx:

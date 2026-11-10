@@ -1,5 +1,8 @@
-matplotlib==3.5.3
-numpy==1.19.2
-pandas==1.2.4
-scikit_learn==0.24.2
-torch==1.8.1+cpu
+# Python 3.7 was used for the runs reported in the manuscript; the scripts also run with current
+# PyTorch 2.x releases, and a CPU-only build is sufficient.
+torch>=1.8.1
+numpy>=1.19.2
+pandas>=1.2.4
+scikit-learn>=0.24.2
+
+# For deterministic CUDA operations, export CUBLAS_WORKSPACE_CONFIG=:4096:8 before running.

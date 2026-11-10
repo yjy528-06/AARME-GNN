@@ -1,0 +1,36 @@
+{
+  "n_drug": 1258,
+  "event_num": 100,
+  "n_pairs": 323539,
+  "n_modalities": 4,
+  "part1_drug_chemical_entity": {
+    "rows": 11597,
+    "entities": 1961,
+    "relations": [
+      "enzyme",
+      "target"
+    ]
+  },
+  "part2_drug_substructure": {
+    "rows": 58436,
+    "entities": 2040,
+    "relations": [
+      "include"
+    ]
+  },
+  "part3_drug_drug": {
+    "rows": 323539,
+    "entities": 1258,
+    "relations": 100
+  },
+  "part4_molecular_structure": {
+    "rows": 25160,
+    "entities": 20,
+    "distinct_values": 15
+  },
+  "event_freq": {
+    "max": 100725,
+    "min": 51,
+    "median": 388
+  }
+}
